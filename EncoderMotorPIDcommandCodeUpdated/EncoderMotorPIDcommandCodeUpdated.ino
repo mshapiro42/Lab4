@@ -5,36 +5,34 @@
 
 #define  EncoderCountsPerRev (12.0)
 //diameter of wheel is 3.25 in
-#define  DistancePerRev       (0.85) //feet
-#define  DistancePerTurn      (0.51) //feet
+#define  DistancePerRev       (0.85) //feet per wheel revolution
+#define  DistancePerTurn      (0.33) //feet per 90 deg
 // these next two are the digital pins we'll use for the encoders
 #define  EncoderMotor1  6
 #define  EncoderMotor2 7
 #define  RightBumper 4
 #define  LeftBumper 5
-//scaling gain values for error corrections
-//#define  GAINmotor1  (3)
-//#define  GAINmotor2 (2.46)
-#define scale .75
+#define scale .90
 #define  motor1     1
 #define  motor2    2
 #define pushButton 2
-#define PushButtonState  (digitalRead(2))
 // here we define the pwm and direction for Right Motor (1) and Left Motor (2)
 #define  motor1PWM        3
 #define  motor1Direction 12
 #define  motor2PWM       11
 #define  motor2Direction 13
-#define pwm1    222//duty cycle on right wheel for straight line
+#define pwm1    240//duty cycle on right wheel for straight line
 #define pwm2    (int)pwm1*scale //duty cycle on left wheel for straight line
-#define deadband1 222
+#define deadband1 170
 #define deadband2 (int)deadband1*scale
 ///////////////////////////////////
 volatile unsigned int leftEncoderCount = 0;
 volatile unsigned int rightEncoderCount = 0; 
-bool buttonState = 0;
+int currentCountRight;
+int currentCountLeft;
 bool rightBump = 0;
 bool leftBump = 0;
+bool buttonState = 0;
 bool buttonPrevious = 0;
 bool button;
 String directions[]={"F","L","F","R","F","L","F","L","F","R","F","R","F","L","F","R","F"};
@@ -91,11 +89,13 @@ void loop()
 //delay(1000);  // wait a second before going into the motion loop
   if(buttonState){
     Serial.println("Button pushed!");
-    for (int i=0; i < 17; i++){  
+    for (int i=0; i < 17; i++){
       Serial.println(i);
       drive(directions[i],distances[i]);
       delay(1000);
     } 
+    motor(motor1,0);
+    motor(motor2,0);
     exit(0);
   }
 }
@@ -108,25 +108,56 @@ void drive(String dirct, int dist) // direction gives forward left or right, dis
     int CMDleft, CMDright;
     int errorLeft;
     int errorRight;
+    rightEncoderCount = 0;
+    leftEncoderCount = 0;  
     if (dirct == "F"){
-      countsDesired = (int) ((dist / DistancePerRev) * EncoderCountsPerRev);
+      countsDesired = (int) (dist * EncoderCountsPerRev / DistancePerRev);
     }
     else if (dirct == "L" || dirct == "R") {
-      countsDesired = (int) ((DistancePerTurn / DistancePerRev) * EncoderCountsPerRev); //12 steps per rev r_chasis=3.375 in, d_wheel=3.25in
+      countsDesired = (int) (DistancePerTurn * EncoderCountsPerRev / DistancePerRev); //12 steps per rev r_chasis=3.375 in, d_wheel=3.25in
     }
 //  we make the errors non-zero so our first test gets us into the loop
     errorLeft = countsDesired;
     errorRight = countsDesired;
     while(errorLeft > 0 || errorRight > 0){
-//    Serial.println();
-//    Serial.print("Counts Desired: ");
-//    Serial.println(countsDesired);
-//    Serial.print("Error Right: ");
-//    Serial.print(errorRight);
-//    Serial.print(" Error Left: ");
-//    Serial.println(errorLeft);
+      rightBump = digitalRead(RightBumper);
+      leftBump = digitalRead(LeftBumper);
+      if (rightBump || leftBump){
+        currentCountRight = rightEncoderCount;
+        currentCountLeft = leftEncoderCount;
+        motor(motor1, -pwm1);
+        motor(motor2,-pwm2);
+        delay(100);
+        if (rightBump){
+          Serial.println("RightBump");
+          motor(motor1, pwm1);
+          motor(motor2,-pwm2);
+          delay(100);
+          rightBump = 0;
+        }
+        if (leftBump) {
+          Serial.println("LeftBump");
+          motor(motor1,-pwm1);
+          motor(motor2,pwm2);
+          delay(100);
+          leftBump = 0;
+        }
+        rightEncoderCount = currentCountRight;
+        leftEncoderCount = currentCountLeft;
+      }
       CMDleft = computeCommand(countsDesired, errorLeft, pwm2,deadband2);
       CMDright = computeCommand(countsDesired, errorRight, pwm1,deadband1);
+      Serial.print(dirct);
+      Serial.print("\tCounts Desired: ");
+      Serial.print(countsDesired);
+      Serial.print("\tError Right: ");
+      Serial.print(errorRight);
+      Serial.print("\tError Left: ");
+      Serial.print(errorLeft);
+      Serial.print("\tPWM Right: ");
+      Serial.print(CMDright);
+      Serial.print("\tPWM Left: ");
+      Serial.println(CMDleft);
       if (dirct == "F"){
         motor(motor1, CMDright);
         motor(motor2, CMDleft);
@@ -145,26 +176,10 @@ void drive(String dirct, int dist) // direction gives forward left or right, dis
 //    Serial.print(errorRight);
 //    Serial.print(",");
 //    Serial.println(errorLeft);
-//    need to convert to Arduino Speak
-//    printf("eL= %d, eR= %d,  cL=%d, cR=%d\n",errorLeft, errorRight, cmdLeft, cmdRight);
-      rightBump = digitalRead(RightBumper);
-      leftBump = digitalRead(LeftBumper);
-      if (rightBump){
-        motor(motor1, pwm1);
-        motor(motor2,-pwm2);
-        delay(200);
-        rightBump = 0;
-      }
-      if (leftBump) {
-        motor(motor1,-pwm1);
-        motor(motor2,pwm2);
-        delay(200);
-        leftBump = 0;
-      }
     }
+    motor(motor1,0);
+    motor(motor2,0);
     countsDesired = 0;
-    rightEncoderCount = 0;
-    leftEncoderCount = 0;
     errorRight = 0;
     errorLeft = 0;
     CMDright = 0;
@@ -182,6 +197,9 @@ int computeCommand(int count, int err, int PWM, int deadband)
 //    Serial.print("=");
 //    Serial.println((int)(err/count));
     int cmdDir = (PWM*err/count);
+    if (err <= 0) {
+      cmdDir = 0;
+    }
 //    Serial.print("Initial: ");
 //    Serial.print(cmdDir);
     if (cmdDir  > PWM){ 
@@ -196,10 +214,10 @@ int computeCommand(int count, int err, int PWM, int deadband)
 }
 ///////////////////////////////////////////////////////////////
 void motor(int m, int pwm){
-  Serial.print(" entering motor");
-  Serial.print(m);
-  Serial.print("\t");
-  Serial.println(pwm);
+//  Serial.print(" entering motor");
+//  Serial.print(m);
+//  Serial.print("\t");
+//  Serial.println(pwm);
   if(m == motor1){
     if(pwm > 0){
       digitalWrite(motor1Direction, HIGH);
