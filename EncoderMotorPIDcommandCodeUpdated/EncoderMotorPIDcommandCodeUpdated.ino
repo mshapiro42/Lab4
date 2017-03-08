@@ -6,13 +6,13 @@
 #define  EncoderCountsPerRev (12.0)
 //diameter of wheel is 3.25 in
 #define  DistancePerRev       (0.85) //feet per wheel revolution
-#define  DistancePerTurn      (0.33) //feet per 90 deg
+#define  DistancePerTurn      (0.16) //feet per 90 deg
 // these next two are the digital pins we'll use for the encoders
 #define  EncoderMotor1  6
 #define  EncoderMotor2 7
 #define  RightBumper 4
 #define  LeftBumper 5
-#define scale .90
+#define scale .93
 #define  motor1     1
 #define  motor2    2
 #define pushButton 2
@@ -23,7 +23,7 @@
 #define  motor2Direction 13
 #define pwm1    240//duty cycle on right wheel for straight line
 #define pwm2    (int)pwm1*scale //duty cycle on left wheel for straight line
-#define deadband1 170
+#define deadband1 240
 #define deadband2 (int)deadband1*scale
 ///////////////////////////////////
 volatile unsigned int leftEncoderCount = 0;
@@ -92,7 +92,7 @@ void loop()
     for (int i=0; i < 17; i++){
       Serial.println(i);
       drive(directions[i],distances[i]);
-      delay(1000);
+      delay(300);
     } 
     motor(motor1,0);
     motor(motor2,0);
@@ -108,6 +108,8 @@ void drive(String dirct, int dist) // direction gives forward left or right, dis
     int CMDleft, CMDright;
     int errorLeft;
     int errorRight;
+    int reverseDistRight;
+    int reverseDistLeft;
     rightEncoderCount = 0;
     leftEncoderCount = 0;  
     if (dirct == "F"){
@@ -120,31 +122,37 @@ void drive(String dirct, int dist) // direction gives forward left or right, dis
     errorLeft = countsDesired;
     errorRight = countsDesired;
     while(errorLeft > 0 || errorRight > 0){
-      rightBump = digitalRead(RightBumper);
-      leftBump = digitalRead(LeftBumper);
-      if (rightBump || leftBump){
-        currentCountRight = rightEncoderCount;
-        currentCountLeft = leftEncoderCount;
-        motor(motor1, -pwm1);
-        motor(motor2,-pwm2);
-        delay(100);
-        if (rightBump){
-          Serial.println("RightBump");
-          motor(motor1, pwm1);
+      if (dirct == "F"){
+        rightBump = digitalRead(RightBumper);
+        leftBump = digitalRead(LeftBumper);
+        if (rightBump || leftBump){                                                                                   
+  //        currentCountRight = rightEncoderCount;
+  //        currentCountLeft = leftEncoderCount;
+          motor(motor1, -pwm1);
           motor(motor2,-pwm2);
-          delay(100);
-          rightBump = 0;
+  //        reverseDistRight = rightEncoderCount - currentCountRight;
+  //        reverseDistLeft = leftEncoderCount - currentCountLeft;
+          delay(120);
+          if (rightBump){
+            Serial.println("RightBump");
+            motor(motor1, pwm1);
+            motor(motor2,-pwm2);
+            delay(80);
+            rightBump = 0;
+          }
+          if (leftBump) {
+            Serial.println("LeftBump");
+            motor(motor1,-pwm1);
+            motor(motor2,pwm2);
+            delay(80);
+            leftBump = 0;
+          }
+          rightEncoderCount = rightEncoderCount-2;
+          leftEncoderCount = leftEncoderCount-2;
         }
-        if (leftBump) {
-          Serial.println("LeftBump");
-          motor(motor1,-pwm1);
-          motor(motor2,pwm2);
-          delay(100);
-          leftBump = 0;
-        }
-        rightEncoderCount = currentCountRight;
-        leftEncoderCount = currentCountLeft;
       }
+      errorLeft = countsDesired - leftEncoderCount;
+      errorRight = countsDesired - rightEncoderCount;
       CMDleft = computeCommand(countsDesired, errorLeft, pwm2,deadband2);
       CMDright = computeCommand(countsDesired, errorRight, pwm1,deadband1);
       Serial.print(dirct);
@@ -170,8 +178,8 @@ void drive(String dirct, int dist) // direction gives forward left or right, dis
         motor(motor1, -CMDright);
         motor(motor2, CMDleft);
       }
-      errorRight = countsDesired - rightEncoderCount; 
-      errorLeft = countsDesired - leftEncoderCount; 
+//      errorRight = countsDesired - rightEncoderCount; 
+//      errorLeft = countsDesired - leftEncoderCount; 
 //    Serial.println();
 //    Serial.print(errorRight);
 //    Serial.print(",");
